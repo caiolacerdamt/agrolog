@@ -1,15 +1,17 @@
 import { X, Save, Truck, User, Phone } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import type { Database } from '../types/supabase';
 
 interface NewDriverModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: () => void;
+    driverToEdit?: Database['public']['Tables']['drivers']['Row'] | null;
 }
 
-export function NewDriverModal({ isOpen, onClose, onSave }: NewDriverModalProps) {
+export function NewDriverModal({ isOpen, onClose, onSave, driverToEdit }: NewDriverModalProps) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
@@ -17,6 +19,25 @@ export function NewDriverModal({ isOpen, onClose, onSave }: NewDriverModalProps)
         license_plate: '',
         phone: '',
     });
+
+    // Reset/Populate form
+    useEffect(() => {
+        if (isOpen) {
+            if (driverToEdit) {
+                setFormData({
+                    name: driverToEdit.name,
+                    license_plate: driverToEdit.license_plate || '',
+                    phone: driverToEdit.phone || '',
+                });
+            } else {
+                setFormData({
+                    name: '',
+                    license_plate: '',
+                    phone: '',
+                });
+            }
+        }
+    }, [isOpen, driverToEdit]);
 
     if (!isOpen) return null;
 
@@ -26,19 +47,31 @@ export function NewDriverModal({ isOpen, onClose, onSave }: NewDriverModalProps)
 
         setLoading(true);
         try {
-            // @ts-ignore
-            const { error } = await supabase.from('drivers').insert({
-                user_id: user.id,
-                name: formData.name,
-                license_plate: formData.license_plate.toUpperCase(),
-                phone: formData.phone,
-                status: 'Disponível'
-            });
+            let error;
+            if (driverToEdit) {
+                const { error: updateError } = await (supabase
+                    .from('drivers') as any)
+                    .update({
+                        name: formData.name,
+                        license_plate: formData.license_plate.toUpperCase(),
+                        phone: formData.phone,
+                    })
+                    .eq('id', driverToEdit.id);
+                error = updateError;
+            } else {
+                const { error: insertError } = await (supabase.from('drivers') as any).insert({
+                    user_id: user.id,
+                    name: formData.name,
+                    license_plate: formData.license_plate.toUpperCase(),
+                    phone: formData.phone,
+                    status: 'Disponível'
+                });
+                error = insertError;
+            }
 
             if (error) throw error;
             onSave();
             onClose();
-            setFormData({ name: '', license_plate: '', phone: '' });
         } catch (error) {
             console.error('Error saving driver:', error);
             alert('Erro ao salvar motorista');
@@ -53,7 +86,7 @@ export function NewDriverModal({ isOpen, onClose, onSave }: NewDriverModalProps)
                 <div className="bg-verde-900 px-6 py-4 flex items-center justify-between text-white">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <User className="text-verde-400" />
-                        Novo Motorista
+                        {driverToEdit ? 'Editar Motorista' : 'Novo Motorista'}
                     </h2>
                     <button onClick={onClose} className="p-1 hover:bg-verde-800 rounded-full transition-colors">
                         <X size={24} />

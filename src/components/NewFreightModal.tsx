@@ -1,4 +1,5 @@
-import { X, Save, Calculator, Calendar, User, MapPin, Truck, Package, DollarSign } from 'lucide-react';
+import { X, Save, Calculator, User, MapPin, Truck, Package, DollarSign } from 'lucide-react';
+import { DatePicker } from './DatePicker';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,19 +11,24 @@ interface NewFreightModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: () => void;
+    freightToEdit?: any;
 }
 
-export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProps) {
+export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewFreightModalProps) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [drivers, setDrivers] = useState<Driver[]>([]);
 
     // Form State
     const [formData, setFormData] = useState({
-        date: new Date().toISOString().split('T')[0],
+        // Initialize with Local Date (not UTC) to avoid "tomorrow" bug late at night
+        date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
+        dischargeDate: '',
         product: 'SOJA',
         driver_id: '',
+        origin: '',
         destination: '',
+        invoiceNumber: '',
         weightLoaded: 0,
         unitPrice: 0,
     });
@@ -35,8 +41,34 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
     useEffect(() => {
         if (isOpen && user) {
             fetchDrivers();
+            if (freightToEdit) {
+                setFormData({
+                    date: freightToEdit.date,
+                    dischargeDate: freightToEdit.discharge_date || '',
+                    product: freightToEdit.product,
+                    driver_id: freightToEdit.driver_id || '',
+                    origin: freightToEdit.origin || '',
+                    destination: freightToEdit.destination || '',
+                    invoiceNumber: freightToEdit.invoice_number || '',
+                    weightLoaded: freightToEdit.weight_loaded,
+                    unitPrice: freightToEdit.unit_price,
+                });
+            } else {
+                // Reset form when opening in create mode
+                setFormData({
+                    date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
+                    dischargeDate: '',
+                    product: 'SOJA',
+                    driver_id: '',
+                    origin: '',
+                    destination: '',
+                    invoiceNumber: '',
+                    weightLoaded: 0,
+                    unitPrice: 0,
+                });
+            }
         }
-    }, [isOpen, user]);
+    }, [isOpen, user, freightToEdit]);
 
     const fetchDrivers = async () => {
         const { data } = await supabase.from('drivers').select('*').order('name');
@@ -65,29 +97,93 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
             // Find selected driver to get their info if needed (though we rely on ID)
             // Save to Supabase
             // @ts-ignore - Supabase type definition mismatch for insert
-            const { error } = await supabase.from('freights').insert({
-                user_id: user.id,
-                date: formData.date,
-                product: formData.product,
-                driver_id: formData.driver_id || null,
-                destination: formData.destination,
-                weight_loaded: formData.weightLoaded,
-                unit_price: formData.unitPrice,
-                total_value: calculations.totalValue,
-                sacks_amount: calculations.sacksAmount,
-                weight_sack: 60,
-                status: 'EM_TRANSITO',
-            });
+            let error;
+
+            if (freightToEdit) {
+                const { error: updateError } = await (supabase
+                    .from('freights') as any)
+                    .update({
+                        date: formData.date,
+                        discharge_date: formData.dischargeDate || null,
+                        product: formData.product,
+                        driver_id: formData.driver_id || null,
+                        origin: formData.origin,
+                        destination: formData.destination,
+                        invoice_number: formData.invoiceNumber,
+                        weight_loaded: formData.weightLoaded,
+                        unit_price: formData.unitPrice,
+                        total_value: calculations.totalValue,
+                        sacks_amount: calculations.sacksAmount,
+                        weight_sack: 60,
+                    })
+                    .eq('id', freightToEdit.id);
+                error = updateError;
+            } else {
+                const { error: insertError } = await (supabase.from('freights') as any).insert({
+                    user_id: user.id,
+                    date: formData.date,
+                    discharge_date: formData.dischargeDate || null,
+                    product: formData.product,
+                    driver_id: formData.driver_id || null,
+                    origin: formData.origin,
+                    destination: formData.destination,
+                    invoice_number: formData.invoiceNumber,
+                    weight_loaded: formData.weightLoaded,
+                    unit_price: formData.unitPrice,
+                    total_value: calculations.totalValue,
+                    sacks_amount: calculations.sacksAmount,
+                    weight_sack: 60,
+                    status: formData.date > new Date().toISOString().split('T')[0] ? 'AGENDADO' : 'EM_TRANSITO',
+                });
+                error = insertError;
+            }
 
             if (error) throw error;
 
             // Sync Driver Status
-            if (formData.driver_id) {
+            const today = new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-');
+            const isFuture = formData.date > today;
+
+            // Helper to determine new driver status
+            const getNewDriverStatus = (currentDriverStatus: string | null | undefined) => {
+                if (!isFuture) return 'Em Viagem'; // If freight is today/past, always Busy
+
+                // If freight is future
+                if (currentDriverStatus === 'Em Viagem') return 'Em Viagem'; // Keep busy if already busy
+                return 'Reservado'; // Else reserve
+            };
+
+            if (formData.driver_id && !freightToEdit) {
+                // New Freight
+                const selectedDriver = drivers.find(d => d.id === formData.driver_id);
+                const newStatus = getNewDriverStatus(selectedDriver?.status);
+
                 await (supabase
                     .from('drivers') as any)
-                    .update({ status: 'Em Viagem' })
+                    .update({ status: newStatus })
                     .eq('id', formData.driver_id);
+            } else if (freightToEdit && formData.driver_id !== freightToEdit.driver_id) {
+                // Edit Freight: Swap Drivers
+                // 1. Release old driver
+                if (freightToEdit.driver_id) {
+                    await (supabase
+                        .from('drivers') as any)
+                        .update({ status: 'Disponível' })
+                        .eq('id', freightToEdit.driver_id);
+                }
+
+                // 2. Occupy new driver
+                if (formData.driver_id) {
+                    const selectedDriver = drivers.find(d => d.id === formData.driver_id);
+                    const newStatus = getNewDriverStatus(selectedDriver?.status);
+
+                    await (supabase
+                        .from('drivers') as any)
+                        .update({ status: newStatus })
+                        .eq('id', formData.driver_id);
+                }
             }
+            // If editing and changing driver, we might need logic to free up independent driver, but skipping for now for simplicity
 
             if (error) throw error;
             onSave();
@@ -95,9 +191,12 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
             // Reset form
             setFormData({
                 date: new Date().toISOString().split('T')[0],
+                dischargeDate: '',
                 product: 'SOJA',
                 driver_id: '',
+                origin: '',
                 destination: '',
+                invoiceNumber: '',
                 weightLoaded: 0,
                 unitPrice: 0,
             });
@@ -116,7 +215,7 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                 <div className="bg-verde-900 px-6 py-4 flex items-center justify-between text-white">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <Truck className="text-verde-400" />
-                        Novo Frete
+                        {freightToEdit ? 'Editar Frete' : 'Novo Frete'}
                     </h2>
                     <button onClick={onClose} className="p-1 hover:bg-verde-800 rounded-full transition-colors">
                         <X size={24} />
@@ -129,30 +228,83 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                     {/* Row 1: Basics */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                                <Calendar size={14} /> Data
-                            </label>
-                            <input
-                                type="date"
-                                required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500 focus:border-verde-500"
+                            <DatePicker
+                                label="Data Carregamento"
                                 value={formData.date}
-                                onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                onChange={(date) => setFormData({ ...formData, date })}
+                                required
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <DatePicker
+                                label="Data Descarga"
+                                value={formData.dischargeDate}
+                                onChange={(date) => setFormData({ ...formData, dischargeDate: date })}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Row 2: Invoice & Product */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-gray-700">Nº Nota</label>
+                            <input
+                                type="text"
+                                placeholder="12345"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
+                                value={formData.invoiceNumber}
+                                onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
                             />
                         </div>
                         <div className="space-y-1">
                             <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
                                 <Package size={14} /> Produto
                             </label>
-                            <select
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
-                                value={formData.product}
-                                onChange={e => setFormData({ ...formData, product: e.target.value })}
-                            >
-                                <option value="SOJA">Soja</option>
-                                <option value="MILHO">Milho</option>
-                                <option value="SORGO">Sorgo</option>
-                            </select>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const dropdown = document.getElementById('product-dropdown');
+                                        if (dropdown) dropdown.classList.toggle('hidden');
+                                        document.getElementById('driver-dropdown')?.classList.add('hidden'); // Close other dropdown
+                                    }}
+                                    className="w-full text-left pl-3 pr-10 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-verde-500 focus:border-verde-500 bg-white text-gray-800 font-medium shadow-sm transition-all hover:border-verde-300 flex items-center justify-between"
+                                >
+                                    <span>
+                                        {formData.product ? formData.product.charAt(0).toUpperCase() + formData.product.slice(1).toLowerCase() : 'Selecione...'}
+                                    </span>
+                                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                        <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                </button>
+
+                                {/* Dropdown Menu */}
+                                <div id="product-dropdown" className="hidden absolute z-50 mt-2 w-full bg-white rounded-xl shadow-xl ring-1 ring-black ring-opacity-5 overflow-hidden left-0 right-0">
+                                    <div className="p-1">
+                                        {['SOJA', 'MILHO', 'SORGO'].map((prod) => (
+                                            <button
+                                                key={prod}
+                                                type="button"
+                                                onClick={() => {
+                                                    setFormData({ ...formData, product: prod });
+                                                    document.getElementById('product-dropdown')?.classList.add('hidden');
+                                                }}
+                                                className={`
+                                                    w-full text-left flex items-center justify-between px-4 py-3 rounded-lg text-sm mb-1
+                                                    ${formData.product === prod ? 'bg-verde-50 border border-verde-200' : 'hover:bg-gray-50 border border-transparent'}
+                                                `}
+                                            >
+                                                <span className="font-bold text-gray-800">
+                                                    {prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase()}
+                                                </span>
+                                                {formData.product === prod && <div className="w-2 h-2 rounded-full bg-verde-500"></div>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -202,7 +354,8 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                                                     <span className="w-1 h-1 rounded-full bg-gray-300"></span>
                                                     <span className={
                                                         driver.status === 'Disponível' ? 'text-green-600' :
-                                                            driver.status === 'Em Viagem' ? 'text-blue-600' : 'text-orange-600'
+                                                            driver.status === 'Em Viagem' ? 'text-blue-600' :
+                                                                driver.status === 'Reservado' ? 'text-amber-600' : 'text-orange-600'
                                                     }>{driver.status}</span>
                                                 </div>
                                             </div>
@@ -216,19 +369,28 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                     </div>
 
                     {/* Row 3: Destination */}
-                    <div className="space-y-1">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                            <MapPin size={14} /> Destino
-                        </label>
+                    <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                        <MapPin size={14} /> Origem / Destino
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
                         <input
                             type="text"
                             required
-                            placeholder="Cidade / Armazém"
+                            placeholder="Origem"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
+                            value={formData.origin}
+                            onChange={e => setFormData({ ...formData, origin: e.target.value })}
+                        />
+                        <input
+                            type="text"
+                            required
+                            placeholder="Destino"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
                             value={formData.destination}
                             onChange={e => setFormData({ ...formData, destination: e.target.value })}
                         />
                     </div>
+
 
                     <div className="h-px bg-gray-200" />
 
@@ -246,7 +408,7 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                                     type="number"
                                     required
                                     min="0"
-                                    step="10"
+                                    step="0.01"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
                                     value={formData.weightLoaded || ''}
                                     onChange={e => setFormData({ ...formData, weightLoaded: parseFloat(e.target.value) || 0 })}
@@ -307,7 +469,7 @@ export function NewFreightModal({ isOpen, onClose, onSave }: NewFreightModalProp
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

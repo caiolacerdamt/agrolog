@@ -1,9 +1,11 @@
-import { Plus, Search, Filter, FileSpreadsheet, Trash } from 'lucide-react';
+import { Plus, Search, Filter, FileSpreadsheet, Trash, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { NewFreightModal } from '../components/NewFreightModal';
+import { FreightFiltersModal, initialFilters, type FilterState } from '../components/FreightFiltersModal';
 import { StatusSelect } from '../components/StatusSelect';
 import { ConfirmationModal } from '../components/ConfirmationModal';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Database } from '../types/supabase';
 
 type FreightWithDriver = Database['public']['Tables']['freights']['Row'] & {
@@ -18,12 +20,31 @@ export function FreightsPage() {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [editingFreight, setEditingFreight] = useState<FreightWithDriver | null>(null);
 
     // Delete Modal State
     const [deleteModal, setDeleteModal] = useState({
         isOpen: false,
         freightId: null as string | null
     });
+
+    // Filters & Sorting
+    const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+    const [filters, setFilters] = useState<FilterState>(initialFilters);
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const getSortIcon = (key: string) => {
+        if (!sortConfig || sortConfig.key !== key) return <ArrowUpDown size={14} className="opacity-30" />;
+        return sortConfig.direction === 'asc' ? <ArrowUp size={14} className="text-verde-600" /> : <ArrowDown size={14} className="text-verde-600" />;
+    };
 
     const fetchFreights = async () => {
         try {
@@ -115,18 +136,61 @@ export function FreightsPage() {
         }
     };
 
-    const filteredFreights = freights.filter(freight =>
-        freight.drivers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        freight.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        freight.drivers?.license_plate?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const processedFreights = freights.filter(freight => {
+        // Search Term
+        const matchesSearch =
+            freight.drivers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            freight.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            freight.drivers?.license_plate?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        if (!matchesSearch) return false;
+
+        // Strict Filters
+        if (filters.startDate && freight.date < filters.startDate) return false;
+        if (filters.endDate && freight.date > filters.endDate) return false;
+        if (filters.status.length > 0 && !filters.status.includes(freight.status || '')) return false;
+        if (filters.product && freight.product !== filters.product) return false;
+        if (filters.driverId && freight.driver_id !== filters.driverId) return false;
+
+        return true;
+    }).sort((a, b) => {
+        if (!sortConfig) return 0;
+        const { key, direction } = sortConfig;
+
+        let aValue: any = a[key as keyof FreightWithDriver];
+        let bValue: any = b[key as keyof FreightWithDriver];
+
+        // Handle nested or special keys
+        if (key === 'drivers.name') {
+            aValue = a.drivers?.name || '';
+            bValue = b.drivers?.name || '';
+        } else if (key === 'drivers.license_plate') {
+            aValue = a.drivers?.license_plate || '';
+            bValue = b.drivers?.license_plate || '';
+        }
+
+        if (aValue < bValue) return direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
 
     return (
         <div className="space-y-6">
             <NewFreightModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setEditingFreight(null);
+                }}
                 onSave={fetchFreights}
+                freightToEdit={editingFreight}
+            />
+
+            <FreightFiltersModal
+                isOpen={isFilterModalOpen}
+                onClose={() => setIsFilterModalOpen(false)}
+                onApply={setFilters}
+                activeFilters={filters}
             />
 
             <ConfirmationModal
@@ -150,7 +214,10 @@ export function FreightsPage() {
                         <span>Exportar</span>
                     </button>
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => {
+                            setEditingFreight(null);
+                            setIsModalOpen(true);
+                        }}
                         className="flex items-center gap-2 px-4 py-2 bg-verde-600 text-white rounded-lg hover:bg-verde-700 transition-colors shadow-sm shadow-verde-200"
                     >
                         <Plus size={20} />
@@ -171,9 +238,18 @@ export function FreightsPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <button className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg border border-transparent hover:border-gray-200 transition-all">
+                <button
+                    onClick={() => setIsFilterModalOpen(true)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${JSON.stringify(filters) !== JSON.stringify(initialFilters)
+                        ? 'bg-verde-50 border-verde-200 text-verde-700'
+                        : 'text-gray-600 hover:bg-gray-100 border-transparent hover:border-gray-200'
+                        }`}
+                >
                     <Filter size={18} />
                     <span>Filtros</span>
+                    {JSON.stringify(filters) !== JSON.stringify(initialFilters) && (
+                        <span className="w-2 h-2 rounded-full bg-verde-500"></span>
+                    )}
                 </button>
             </div>
 
@@ -183,16 +259,29 @@ export function FreightsPage() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase text-gray-500 font-medium whitespace-nowrap">
-                                <th className="px-6 py-4">Dia</th>
-                                <th className="px-6 py-4">Produto</th>
+                                <th className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('date')}>
+                                    <div className="flex items-center gap-1">Dia {getSortIcon('date')}</div>
+                                </th>
+                                <th className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('product')}>
+                                    <div className="flex items-center gap-1">Produto {getSortIcon('product')}</div>
+                                </th>
+                                <th className="px-6 py-4">Nota</th>
                                 <th className="px-6 py-4">Placa</th>
-                                <th className="px-6 py-4">Motorista</th>
-                                <th className="px-6 py-4">Destino</th>
-                                <th className="px-6 py-4 text-right">Peso Carreg.</th>
+                                <th className="px-6 py-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('drivers.name')}>
+                                    <div className="flex items-center gap-1">Motorista {getSortIcon('drivers.name')}</div>
+                                </th>
+                                <th className="px-6 py-4">Origem / Destino</th>
+                                <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('weight_loaded')}>
+                                    <div className="flex items-center justify-end gap-1">Peso Carreg. {getSortIcon('weight_loaded')}</div>
+                                </th>
+                                <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('sacks_amount')}>
+                                    <div className="flex items-center justify-end gap-1">Qtd. Sacas {getSortIcon('sacks_amount')}</div>
+                                </th>
                                 <th className="px-6 py-4 text-right">Peso p/ Saca</th>
-                                <th className="px-6 py-4 text-right">Valor p/ Saca</th>
+                                <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('unit_price')}>
+                                    <div className="flex items-center justify-end gap-1">Valor p/ Saca {getSortIcon('unit_price')}</div>
+                                </th>
                                 <th className="px-6 py-4">Data Descarga</th>
-                                <th className="px-6 py-4 text-right">Recebimentos</th>
                                 <th className="px-6 py-4 text-right">A Receber</th>
                                 <th className="px-6 py-4">Status</th>
                             </tr>
@@ -200,24 +289,27 @@ export function FreightsPage() {
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={12} className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan={13} className="px-6 py-8 text-center text-gray-500">
                                         Carregando fretes...
                                     </td>
                                 </tr>
-                            ) : filteredFreights.length === 0 ? (
+                            ) : processedFreights.length === 0 ? (
                                 <tr>
-                                    <td colSpan={12} className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan={13} className="px-6 py-8 text-center text-gray-500">
                                         Nenhum frete encontrado.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredFreights.map((freight) => (
+                                processedFreights.map((freight) => (
                                     <tr key={freight.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer group text-sm">
                                         <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
-                                            {new Date(freight.date).toLocaleDateString('pt-BR')}
+                                            {freight.date ? new Date(freight.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
                                         </td>
                                         <td className="px-6 py-4 font-medium text-gray-800">
                                             {freight.product}
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
+                                            {freight.invoice_number || '-'}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <span className="bg-gray-100 px-2 py-1 rounded text-xs font-mono text-gray-600">
@@ -228,10 +320,17 @@ export function FreightsPage() {
                                             {freight.drivers?.name || 'Sem Motorista'}
                                         </td>
                                         <td className="px-6 py-4 text-gray-600">
-                                            {freight.destination}
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <span className="font-medium text-gray-800">{freight.origin}</span>
+                                                <span className="text-gray-400">➝</span>
+                                                <span>{freight.destination}</span>
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right font-medium text-gray-700">
                                             {freight.weight_loaded.toLocaleString('pt-BR')}
+                                        </td>
+                                        <td className="px-6 py-4 text-right text-gray-600 font-medium">
+                                            {freight.sacks_amount?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right text-gray-600">
                                             {freight.weight_sack?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -240,10 +339,7 @@ export function FreightsPage() {
                                             {freight.unit_price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                         <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
-                                            -
-                                        </td>
-                                        <td className="px-6 py-4 text-right text-gray-600 whitespace-nowrap">
-                                            {freight.receipts ? freight.receipts.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}
+                                            {freight.discharge_date ? new Date(freight.discharge_date + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right font-medium text-red-600 whitespace-nowrap">
                                             {freight.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -254,6 +350,17 @@ export function FreightsPage() {
                                                     currentStatus={(freight.status || 'EM_TRANSITO') as any}
                                                     onChange={(newStatus) => handleStatusChange(freight.id, newStatus)}
                                                 />
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingFreight(freight);
+                                                        setIsModalOpen(true);
+                                                    }}
+                                                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                    title="Editar Frete"
+                                                >
+                                                    <Pencil size={16} />
+                                                </button>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); confirmDelete(freight.id); }}
                                                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
@@ -271,7 +378,7 @@ export function FreightsPage() {
                 </div>
                 {!loading && (
                     <div className="p-4 border-t border-gray-100 text-sm text-gray-500 flex justify-between items-center">
-                        <span>Mostrando {filteredFreights.length} resultados</span>
+                        <span>Mostrando {processedFreights.length} resultados</span>
                         <div className="flex gap-2">
                             <button className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50">Anterior</button>
                             <button className="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">Próximo</button>

@@ -50,8 +50,11 @@ export type Database = {
                     created_at: string | null
                     date: string
                     destination: string
+                    discharge_date: string | null
                     driver_id: string | null
                     id: string
+                    invoice_number: string | null
+                    origin: string | null
                     product: string
                     receipts: number | null
                     sacks_amount: number | null
@@ -67,8 +70,11 @@ export type Database = {
                     created_at?: string | null
                     date: string
                     destination: string
+                    discharge_date?: string | null
                     driver_id?: string | null
                     id?: string
+                    invoice_number?: string | null
+                    origin?: string | null
                     product: string
                     receipts?: number | null
                     sacks_amount?: number | null
@@ -84,8 +90,11 @@ export type Database = {
                     created_at?: string | null
                     date?: string
                     destination?: string
+                    discharge_date?: string | null
                     driver_id?: string | null
                     id?: string
+                    invoice_number?: string | null
+                    origin?: string | null
                     product?: string
                     receipts?: number | null
                     sacks_amount?: number | null

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Clock, Truck, PackageCheck } from 'lucide-react';
+import { Check, Clock, Truck, PackageCheck, CalendarClock } from 'lucide-react';
 import type { FreightStatus } from '../types';
 
 interface StatusSelectProps {
@@ -13,6 +13,7 @@ const statusConfig: Record<FreightStatus, { label: string; bg: string; text: str
     'DESCARREGADO': { label: 'Descarregado', bg: 'bg-blue-100', text: 'text-blue-800', icon: PackageCheck },
     'PAGO': { label: 'Pago', bg: 'bg-emerald-100', text: 'text-emerald-800', icon: Check },
     'ATRASADO': { label: 'Atrasado', bg: 'bg-rose-100', text: 'text-rose-800', icon: Clock },
+    'AGENDADO': { label: 'Agendado', bg: 'bg-purple-100', text: 'text-purple-800', icon: CalendarClock },
 };
 
 export function StatusSelect({ currentStatus, onChange }: StatusSelectProps) {
@@ -72,12 +73,12 @@ export function StatusSelect({ currentStatus, onChange }: StatusSelectProps) {
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
                 className={`
-                    flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold
+                    flex items-center justify-center gap-2 w-[140px] px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm
                     ${currentConfig.bg} ${currentConfig.text}
-                    hover:opacity-80 transition-opacity border border-black/5
+                    hover:opacity-90 transition-all border border-black/5
                 `}
             >
-                <span className="truncate">{currentConfig.label}</span>
+                <span>{currentConfig.label.toUpperCase()}</span>
             </button>
 
             {isOpen && createPortal(

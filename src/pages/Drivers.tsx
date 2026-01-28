@@ -1,4 +1,4 @@
-import { Search, Truck, Star, Plus, Trash } from 'lucide-react';
+import { Search, Truck, Star, Plus, Trash, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { NewDriverModal } from '../components/NewDriverModal';
@@ -29,6 +29,12 @@ export function DriversPage() {
         isOpen: false,
         message: ''
     });
+    const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+
+    const handleEdit = (driver: Driver) => {
+        setEditingDriver(driver);
+        setIsModalOpen(true);
+    };
 
     const fetchDrivers = async () => {
         try {
@@ -91,8 +97,12 @@ export function DriversPage() {
         <div className="space-y-6">
             <NewDriverModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setEditingDriver(null);
+                }}
                 onSave={fetchDrivers}
+                driverToEdit={editingDriver}
             />
 
             <DriverDetailsModal
@@ -166,40 +176,48 @@ export function DriversPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredDrivers.map((driver) => (
                         <div key={driver.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col gap-4 hover:shadow-md transition-shadow relative group">
-                            <button
-                                onClick={() => confirmDelete(driver.id, driver.name)}
-                                className="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Excluir Motorista"
-                            >
-                                <Trash size={18} />
-                            </button>
-
-                            <div className="flex items-start justify-between pr-8">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-full bg-verde-100 text-verde-700 flex items-center justify-center font-bold text-lg uppercase">
+                            <div className="flex items-start justify-between">
+                                <div className="flex max-w-[70%] items-center gap-3">
+                                    <div className="w-12 h-12 rounded-full bg-verde-100 text-verde-700 flex items-center justify-center font-bold text-lg uppercase flex-shrink-0">
                                         {driver.name.charAt(0)}
                                     </div>
-                                    <div>
-                                        <h3 className="font-bold text-gray-800">{driver.name}</h3>
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-gray-800 truncate">{driver.name}</h3>
                                         {driver.license_plate && (
-                                            <div className="flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full w-fit">
+                                            <div className="flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full w-fit mt-1">
                                                 <Truck size={12} />
                                                 {driver.license_plate}
                                             </div>
                                         )}
+                                        <div className={clsx(
+                                            "mt-1 text-xs font-medium w-fit px-2 py-0.5 rounded",
+                                            driver.status === 'Disponível' ? 'bg-green-100 text-green-700' :
+                                                driver.status === 'Em Viagem' ? 'bg-blue-100 text-blue-700' :
+                                                    'bg-orange-100 text-orange-700'
+                                        )}>
+                                            {driver.status || 'Indefinido'}
+                                        </div>
                                     </div>
                                 </div>
-                                <span className={clsx(
-                                    "px-2 py-1 rounded text-xs font-medium",
-                                    driver.status === 'Disponível' ? 'bg-green-100 text-green-700' :
-                                        driver.status === 'Em Viagem' ? 'bg-blue-100 text-blue-700' :
-                                            'bg-orange-100 text-orange-700'
-                                )}>
-                                    {driver.status || 'Indefinido'}
-                                </span>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => handleEdit(driver)}
+                                        className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Editar Motorista"
+                                    >
+                                        <Pencil size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => confirmDelete(driver.id, driver.name)}
+                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Excluir Motorista"
+                                    >
+                                        <Trash size={18} />
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 py-3 border-y border-gray-50">
+                            <div className="grid grid-cols-2 gap-4 py-3 border-y border-gray-50 mt-2">
                                 <div className="text-center">
                                     <span className="block text-2xl font-bold text-gray-800">{driver.trips || 0}</span>
                                     <span className="text-xs text-gray-400 uppercase">Viagens</span>

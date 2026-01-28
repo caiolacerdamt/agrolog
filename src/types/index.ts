@@ -1,4 +1,4 @@
-export type FreightStatus = 'EM_TRANSITO' | 'DESCARREGADO' | 'PAGO' | 'ATRASADO';
+export type FreightStatus = 'EM_TRANSITO' | 'DESCARREGADO' | 'PAGO' | 'ATRASADO' | 'AGENDADO';
 
 export interface Freight {
     id: string;
