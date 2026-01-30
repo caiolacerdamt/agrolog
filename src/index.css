@@ -38,3 +38,21 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+@layer utilities {
+  .bg-verde-300 {
+    background-color: var(--color-verde-300);
+  }
+
+  .bg-verde-400 {
+    background-color: var(--color-verde-400);
+  }
+
+  .bg-verde-500 {
+    background-color: var(--color-verde-500);
+  }
+
+  .group-hover\:bg-verde-400:hover {
+    background-color: var(--color-verde-400);
+  }
+}

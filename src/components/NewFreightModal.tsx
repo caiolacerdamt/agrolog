@@ -54,21 +54,51 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
                     unitPrice: freightToEdit.unit_price,
                 });
             } else {
-                // Reset form when opening in create mode
-                setFormData({
-                    date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
-                    dischargeDate: '',
-                    product: 'SOJA',
-                    driver_id: '',
-                    origin: '',
-                    destination: '',
-                    invoiceNumber: '',
-                    weightLoaded: 0,
-                    unitPrice: 0,
-                });
+                // Check for draft
+                const savedDraft = localStorage.getItem('new_freight_draft');
+                if (savedDraft) {
+                    try {
+                        const parsedDraft = JSON.parse(savedDraft);
+                        setFormData(parsedDraft);
+                    } catch (e) {
+                        console.error("Error parsing draft", e);
+                        // Fallback to default
+                        setFormData({
+                            date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
+                            dischargeDate: '',
+                            product: 'SOJA',
+                            driver_id: '',
+                            origin: '',
+                            destination: '',
+                            invoiceNumber: '',
+                            weightLoaded: 0,
+                            unitPrice: 0,
+                        });
+                    }
+                } else {
+                    // Reset form when opening in create mode (no draft)
+                    setFormData({
+                        date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
+                        dischargeDate: '',
+                        product: 'SOJA',
+                        driver_id: '',
+                        origin: '',
+                        destination: '',
+                        invoiceNumber: '',
+                        weightLoaded: 0,
+                        unitPrice: 0,
+                    });
+                }
             }
         }
     }, [isOpen, user, freightToEdit]);
+
+    // Save draft on change (only if not editing)
+    useEffect(() => {
+        if (!freightToEdit && isOpen) {
+            localStorage.setItem('new_freight_draft', JSON.stringify(formData));
+        }
+    }, [formData, freightToEdit, isOpen]);
 
     const fetchDrivers = async () => {
         const { data } = await supabase.from('drivers').select('*').order('name');
@@ -77,8 +107,12 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
 
     // Auto-calculate whenever weight or price changes
     useEffect(() => {
-        const sacks = formData.weightLoaded / 60;
-        const total = sacks * formData.unitPrice;
+        // Weight is now in Tons
+        const uniquePrice = formData.unitPrice;
+        const total = formData.weightLoaded * uniquePrice;
+
+        // Sacks calculation: (Tons * 1000) / 60
+        const sacks = (formData.weightLoaded * 1000) / 60;
 
         setCalculations({
             sacksAmount: sacks,
@@ -188,6 +222,9 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
             if (error) throw error;
             onSave();
             onClose();
+            // Clear draft on success
+            localStorage.removeItem('new_freight_draft');
+
             // Reset form
             setFormData({
                 date: new Date().toISOString().split('T')[0],
@@ -403,12 +440,12 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
-                                <label className="text-sm font-medium text-gray-700">Peso Carregamento (Kg)</label>
+                                <label className="text-sm font-medium text-gray-700">Peso Carregamento (Toneladas)</label>
                                 <input
                                     type="number"
                                     required
                                     min="0"
-                                    step="0.01"
+                                    step="0.001"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-verde-500"
                                     value={formData.weightLoaded || ''}
                                     onChange={e => setFormData({ ...formData, weightLoaded: parseFloat(e.target.value) || 0 })}
@@ -416,7 +453,7 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
-                                    <DollarSign size={14} /> Valor Por Saca (Unitário)
+                                    <DollarSign size={14} /> Valor Por Tonelada
                                 </label>
                                 <div className="space-y-1">
                                     <input
@@ -428,24 +465,41 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
                                         value={formData.unitPrice || ''}
                                         onChange={e => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })}
                                     />
-                                    <p className="text-xs text-gray-500">Valor pago por cada saca de 60kg.</p>
+                                    <p className="text-xs text-gray-500">Valor pago por tonelada.</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                        <div className="bg-white p-3 rounded-lg border border-verde-200">
-                            <span className="text-xs text-gray-500 uppercase font-semibold">Qtd. Sacas (60kg)</span>
-                            <div className="text-xl font-bold text-gray-800">
-                                {calculations.sacksAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div className="space-y-3 pt-2">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white p-3 rounded-lg border border-verde-200">
+                                <span className="text-xs text-gray-500 uppercase font-semibold">Qtd. Sacas (60kg)</span>
+                                <div className="text-xl font-bold text-gray-800">
+                                    {calculations.sacksAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
                             </div>
-                            <span className="text-[10px] text-gray-400">Peso / 60</span>
+                            <div className="bg-white p-3 rounded-lg border border-verde-200">
+                                <span className="text-xs text-gray-500 uppercase font-semibold">Valor Total Frete</span>
+                                <div className="text-xl font-bold text-verde-700">
+                                    {calculations.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </div>
+                            </div>
                         </div>
-                        <div className="bg-white p-3 rounded-lg border border-verde-200">
-                            <span className="text-xs text-gray-500 uppercase font-semibold">Valor Total Frete</span>
-                            <div className="text-xl font-bold text-verde-700">
-                                {calculations.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+
+                        {/* Payment Breakdown */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <span className="text-xs text-blue-600 uppercase font-semibold">Adiantamento (70%)</span>
+                                <div className="text-lg font-bold text-blue-800">
+                                    {(calculations.totalValue * 0.70).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </div>
+                            </div>
+                            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                                <span className="text-xs text-orange-600 uppercase font-semibold">Restante (30%)</span>
+                                <div className="text-lg font-bold text-orange-800">
+                                    {(calculations.totalValue * 0.30).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </div>
                             </div>
                         </div>
                     </div>

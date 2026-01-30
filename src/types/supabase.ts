@@ -65,6 +65,8 @@ export type Database = {
                     user_id: string
                     weight_loaded: number
                     weight_sack: number | null
+                    advance_paid: boolean
+                    balance_paid: boolean
                 }
                 Insert: {
                     created_at?: string | null
@@ -85,6 +87,8 @@ export type Database = {
                     user_id?: string
                     weight_loaded: number
                     weight_sack?: number | null
+                    advance_paid?: boolean
+                    balance_paid?: boolean
                 }
                 Update: {
                     created_at?: string | null
@@ -105,6 +109,8 @@ export type Database = {
                     user_id?: string
                     weight_loaded?: number
                     weight_sack?: number | null
+                    advance_paid?: boolean
+                    balance_paid?: boolean
                 }
                 Relationships: [
                     {

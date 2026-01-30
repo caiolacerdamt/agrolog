@@ -99,6 +99,24 @@ export function FreightsPage() {
         }
     };
 
+    const handlePaymentToggle = async (freightId: string, field: 'advance_paid' | 'balance_paid', currentValue: boolean) => {
+        try {
+            // @ts-ignore
+            const { error } = await supabase
+                .from('freights')
+                // @ts-ignore
+                .update({ [field]: !currentValue } as any)
+                .eq('id', freightId);
+
+            if (error) throw error;
+
+            setFreights(freights.map(f => f.id === freightId ? { ...f, [field]: !currentValue } : f));
+        } catch (error) {
+            console.error('Error updating payment status:', error);
+            alert('Erro ao atualizar pagamento');
+        }
+    };
+
     const confirmDelete = (id: string) => {
         setDeleteModal({ isOpen: true, freightId: id });
     };
@@ -272,17 +290,20 @@ export function FreightsPage() {
                                 </th>
                                 <th className="px-6 py-4">Origem / Destino</th>
                                 <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('weight_loaded')}>
-                                    <div className="flex items-center justify-end gap-1">Peso Carreg. {getSortIcon('weight_loaded')}</div>
+                                    <div className="flex items-center justify-end gap-1">Peso (Ton) {getSortIcon('weight_loaded')}</div>
                                 </th>
                                 <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('sacks_amount')}>
                                     <div className="flex items-center justify-end gap-1">Qtd. Sacas {getSortIcon('sacks_amount')}</div>
                                 </th>
                                 <th className="px-6 py-4 text-right">Peso p/ Saca</th>
                                 <th className="px-6 py-4 text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('unit_price')}>
-                                    <div className="flex items-center justify-end gap-1">Valor p/ Saca {getSortIcon('unit_price')}</div>
+                                    <div className="flex items-center justify-end gap-1">Valor p/ Ton {getSortIcon('unit_price')}</div>
                                 </th>
                                 <th className="px-6 py-4">Data Descarga</th>
-                                <th className="px-6 py-4 text-right">A Receber</th>
+                                <th className="px-6 py-4 text-right text-blue-600">70% (Adiant.)</th>
+                                <th className="px-6 py-4 text-right text-orange-600">30% (Saldo)</th>
+                                <th className="px-6 py-4 text-right text-purple-600">Comissão (5/ton)</th>
+                                <th className="px-6 py-4 text-right">Valor Total</th>
                                 <th className="px-6 py-4">Status</th>
                             </tr>
                         </thead>
@@ -327,7 +348,7 @@ export function FreightsPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right font-medium text-gray-700">
-                                            {freight.weight_loaded.toLocaleString('pt-BR')}
+                                            {freight.weight_loaded.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                         </td>
                                         <td className="px-6 py-4 text-right text-gray-600 font-medium">
                                             {freight.sacks_amount?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '-'}
@@ -341,7 +362,81 @@ export function FreightsPage() {
                                         <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
                                             {freight.discharge_date ? new Date(freight.discharge_date + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
                                         </td>
-                                        <td className="px-6 py-4 text-right font-medium text-red-600 whitespace-nowrap">
+
+                                        {/* Advance 70% */}
+                                        <td className="px-6 py-4 text-center whitespace-nowrap">
+                                            <div className="flex flex-col items-center gap-1.5">
+                                                <span className="font-medium text-blue-700">
+                                                    {(freight.total_value * 0.70).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePaymentToggle(freight.id, 'advance_paid', freight.advance_paid || false);
+                                                    }}
+                                                    className={`
+                                                        flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm
+                                                        ${freight.advance_paid
+                                                            ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
+                                                            : 'bg-white text-gray-400 border-gray-200 hover:border-blue-300 hover:text-blue-500'
+                                                        }
+                                                    `}
+                                                >
+                                                    {freight.advance_paid ? (
+                                                        <>
+                                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                            PAGO
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                                                            PENDENTE
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
+
+                                        {/* Balance 30% */}
+                                        <td className="px-6 py-4 text-center whitespace-nowrap">
+                                            <div className="flex flex-col items-center gap-1.5">
+                                                <span className="font-medium text-orange-700">
+                                                    {(freight.total_value * 0.30).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handlePaymentToggle(freight.id, 'balance_paid', freight.balance_paid || false);
+                                                    }}
+                                                    className={`
+                                                        flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border shadow-sm
+                                                        ${freight.balance_paid
+                                                            ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
+                                                            : 'bg-white text-gray-400 border-gray-200 hover:border-orange-300 hover:text-orange-500'
+                                                        }
+                                                    `}
+                                                >
+                                                    {freight.balance_paid ? (
+                                                        <>
+                                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                                            PAGO
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                                                            PENDENTE
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
+
+                                        {/* Commission (R$ 5,00 per Ton) */}
+                                        <td className="px-6 py-4 text-right font-medium text-purple-700 bg-purple-50/30 whitespace-nowrap">
+                                            {((freight.weight_loaded || 0) * 5).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
+
+                                        <td className="px-6 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
                                             {freight.total_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                         <td className="px-6 py-4">
@@ -374,6 +469,35 @@ export function FreightsPage() {
                                 ))
                             )}
                         </tbody>
+                        <tfoot className="bg-gray-50 border-t-2 border-gray-200 font-bold text-gray-700 text-sm">
+                            <tr>
+                                <td colSpan={6} className="px-6 py-4 text-right uppercase text-xs tracking-wider text-gray-500">
+                                    Totais da Página
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    {processedFreights.reduce((acc, curr) => acc + (curr.weight_loaded || 0), 0)
+                                        .toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    {processedFreights.reduce((acc, curr) => acc + (curr.sacks_amount || 0), 0)
+                                        .toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td></td> {/* Peso Saca */}
+                                <td></td> {/* Valor Ton */}
+                                <td></td> {/* Data Descarga */}
+                                <td></td> {/* Adiantamento - Empty */}
+                                <td></td> {/* Saldo - Empty */}
+                                <td className="px-6 py-4 text-right text-purple-700 bg-purple-50/50">
+                                    {processedFreights.reduce((acc, curr) => acc + ((curr.weight_loaded || 0) * 5), 0)
+                                        .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </td>
+                                <td className="px-6 py-4 text-right text-gray-900 border-l border-gray-200">
+                                    {processedFreights.reduce((acc, curr) => acc + (curr.total_value || 0), 0)
+                                        .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </td>
+                                <td></td> {/* Status */}
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
                 {!loading && (
