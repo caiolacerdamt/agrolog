@@ -23,7 +23,7 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
     const [formData, setFormData] = useState({
         // Initialize with Local Date (not UTC) to avoid "tomorrow" bug late at night
         date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
-        dischargeDate: '',
+        dischargeDate: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
         product: 'SOJA',
         driver_id: '',
         origin: '',
@@ -65,7 +65,7 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
                         // Fallback to default
                         setFormData({
                             date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
-                            dischargeDate: '',
+                            dischargeDate: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
                             product: 'SOJA',
                             driver_id: '',
                             origin: '',
@@ -79,7 +79,7 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
                     // Reset form when opening in create mode (no draft)
                     setFormData({
                         date: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
-                        dischargeDate: '',
+                        dischargeDate: new Date().toLocaleDateString('pt-BR').split('/').reverse().join('-'),
                         product: 'SOJA',
                         driver_id: '',
                         origin: '',
@@ -228,7 +228,7 @@ export function NewFreightModal({ isOpen, onClose, onSave, freightToEdit }: NewF
             // Reset form
             setFormData({
                 date: new Date().toISOString().split('T')[0],
-                dischargeDate: '',
+                dischargeDate: new Date().toISOString().split('T')[0],
                 product: 'SOJA',
                 driver_id: '',
                 origin: '',

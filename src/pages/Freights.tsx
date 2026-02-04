@@ -1,4 +1,5 @@
-import { Plus, Search, Filter, FileSpreadsheet, Trash, Pencil } from 'lucide-react';
+import { Plus, Search, Filter, FileSpreadsheet, Trash, Pencil, ChevronDown } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { NewFreightModal } from '../components/NewFreightModal';
@@ -21,6 +22,7 @@ export function FreightsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingFreight, setEditingFreight] = useState<FreightWithDriver | null>(null);
+    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
     // Delete Modal State
     const [deleteModal, setDeleteModal] = useState({
@@ -192,6 +194,59 @@ export function FreightsPage() {
         return 0;
     });
 
+    const handleExport = (format: 'csv' | 'xlsx') => {
+        const dataToExport = processedFreights.map(f => ({
+            'Data': f.date ? new Date(f.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-',
+            'Produto': f.product,
+            'Nota': f.invoice_number || '-',
+            'Placa': f.drivers?.license_plate || '-',
+            'Motorista': f.drivers?.name || 'Sem Motorista',
+            'Origem': f.origin,
+            'Destino': f.destination,
+            'Peso Carregado (Ton)': f.weight_loaded,
+            'Qtd. Sacas': f.sacks_amount || 0,
+            'Peso p/ Saca': f.weight_sack || 0,
+            'Valor p/ Ton': f.unit_price,
+            'Data Descarga': f.discharge_date ? new Date(f.discharge_date + 'T12:00:00').toLocaleDateString('pt-BR') : '-',
+            'Adiantamento (70%)': f.total_value * 0.70,
+            'Status Adiantamento': f.advance_paid ? 'PAGO' : 'PENDENTE',
+            'Saldo (30%)': f.total_value * 0.30,
+            'Status Saldo': f.balance_paid ? 'PAGO' : 'PENDENTE',
+            'Comissão': (f.weight_loaded || 0) * 5,
+            'Valor Total': f.total_value,
+            'Status Frete': f.status
+        }));
+
+        if (format === 'xlsx') {
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Fretes");
+            XLSX.writeFile(wb, `fretes_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+        } else {
+            // CSV Manual Generation for better control over delimiters in Brazil (;)
+            const headers = Object.keys(dataToExport[0]);
+            const csvContent = [
+                headers.join(';'),
+                ...dataToExport.map(row => headers.map(header => {
+                    const val = row[header as keyof typeof row];
+                    if (typeof val === 'number') return val.toString().replace('.', ','); // PT-BR format
+                    return `"${String(val).replace(/"/g, '""')}"`; // Escape quotes
+                }).join(';'))
+            ].join('\n');
+
+            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `fretes_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        setIsExportMenuOpen(false);
+    };
+
     return (
         <div className="space-y-6">
             <NewFreightModal
@@ -227,10 +282,33 @@ export function FreightsPage() {
                     <p className="text-gray-500">Gerencie todas as viagens, carregamentos e descargas.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-                        <FileSpreadsheet size={18} />
-                        <span>Exportar</span>
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            <FileSpreadsheet size={18} />
+                            <span>Exportar</span>
+                            <ChevronDown size={14} />
+                        </button>
+
+                        {isExportMenuOpen && (
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-50 py-1">
+                                <button
+                                    onClick={() => handleExport('xlsx')}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <span className="text-green-600 font-bold">XLSX</span> Excel
+                                </button>
+                                <button
+                                    onClick={() => handleExport('csv')}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                    <span className="text-gray-500 font-bold">CSV</span> Separado por ponto e vírgula
+                                </button>
+                            </div>
+                        )}
+                    </div>
                     <button
                         onClick={() => {
                             setEditingFreight(null);
